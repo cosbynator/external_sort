@@ -17,11 +17,7 @@ func TestExternalSort(t *testing.T) {
   for memorySize := 1; memorySize < 5; memorySize++ {
     unsortedChan := make(chan *ComparableItem)
     sortedChan := make(chan *ComparableItem)
-    go ExternalSort(memorySize, func(g *gob.Decoder) (*ComparableItem, error) {
-      var ret ComparableItem
-      err := g.Decode(&ret)
-      return &ret, err
-    }, unsortedChan, sortedChan)
+    go ExternalSort(memorySize, unsortedChan, sortedChan)
 
     for i := 100; i > 0; i-- {
       in := ComparableItem(ComparableInt(i))

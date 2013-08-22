@@ -19,7 +19,7 @@ func (s ComparableItems) Len() int { return len(s) }
 func (s ComparableItems) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 func (s ComparableItems) Less(i, j int) bool { return (*s[i]).LessThan(s[j]) }
 
-func ExternalSort(numMemory int, decodeConcrete func(*gob.Decoder) (*ComparableItem, error), inputChan chan *ComparableItem, outputChan chan *ComparableItem) {
+func ExternalSort(numMemory int, inputChan chan *ComparableItem, outputChan chan *ComparableItem) {
   memoryItems := make(ComparableItems, 0, numMemory)
   unmergedFiles := make([]string, 0)
 
@@ -66,32 +66,34 @@ func ExternalSort(numMemory int, decodeConcrete func(*gob.Decoder) (*ComparableI
     g2 := gob.NewDecoder(f2)
     gout := gob.NewEncoder(fout)
 
-    var h1 *ComparableItem
-    var h2 *ComparableItem
+    var tmp ComparableItem
+    var tmp2 ComparableItem
+    h1 := &tmp
+    h2 := &tmp2
     var err1, err2 error
-    h1, err1 = decodeConcrete(g1)
+    err1 = g1.Decode(h1)
     if err1 != nil { panic(err1) }
-    h2, err2 = decodeConcrete(g2)
+    err2 = g2.Decode(h2)
     if err2 != nil { panic(err2) }
 
     for err1 != io.EOF && err2 != io.EOF {
       if (*h1).LessThan(h2) {
         gout.Encode(h1)
-        h1, err1 = decodeConcrete(g1)
+        err1 = g1.Decode(h1)
       } else {
         gout.Encode(h2)
-        h2, err2 = decodeConcrete(g2)
+        err2 = g2.Decode(h2)
       }
     }
 
     for err1 != io.EOF {
         gout.Encode(h1)
-        h1, err1 = decodeConcrete(g1)
+        err1 = g1.Decode(h1)
     }
 
     for err2 != io.EOF {
         gout.Encode(h2)
-        h2, err2 = decodeConcrete(g2)
+        err2 = g2.Decode(h2)
     }
 
     return fileName
