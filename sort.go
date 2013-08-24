@@ -19,46 +19,14 @@ func (s ComparableItems) Len() int { return len(s) }
 func (s ComparableItems) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 func (s ComparableItems) Less(i, j int) bool { return (*s[i]).LessThan(s[j]) }
 
-func ExternalSort(numMemory int, inputChan chan *ComparableItem, outputChan chan *ComparableItem) {
-  memoryItems := make(ComparableItems, 0, numMemory)
-  unmergedFiles := make([]string, 0)
-
-  tmpDir, err := ioutil.TempDir("", "go_external_sort")
-  if err != nil { panic(err) }
-  defer os.RemoveAll(tmpDir)
-
-  fileCount := 0
-  uniqueFileName := func() string {
-    ret := path.Join(tmpDir, strconv.Itoa(fileCount))
-    fileCount++
-    return ret
-  }
-
-  flushMemory := func() {
-    sort.Sort(memoryItems)
-    fileName := uniqueFileName()
-    outputFile, err := os.OpenFile(fileName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
-    if err != nil { panic(err) }
-    defer outputFile.Close()
-
-    gobEncoder := gob.NewEncoder(outputFile)
-    for _, item := range memoryItems {
-      err := gobEncoder.Encode(item)
-      if err != nil { panic(err) }
-    }
-    unmergedFiles = append(unmergedFiles, fileName)
-    memoryItems = make(ComparableItems, 0, numMemory)
-  }
-
-  mergeFiles := func(path1, path2 string) string {
+func mergeFiles(path1, path2, outputPath string) {
     f1, err := os.Open(path1)
     if err != nil { panic(err) }
     defer f1.Close()
     f2, err := os.Open(path2)
     if err != nil { panic(err) }
     defer f2.Close()
-    fileName := uniqueFileName()
-    fout, err := os.OpenFile(fileName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+    fout, err := os.OpenFile(outputPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
     if err != nil { panic(err) }
     defer fout.Close()
 
@@ -95,8 +63,37 @@ func ExternalSort(numMemory int, inputChan chan *ComparableItem, outputChan chan
         gout.Encode(h2)
         err2 = g2.Decode(h2)
     }
+}
 
-    return fileName
+func ExternalSort(numMemory int, inputChan chan *ComparableItem, outputChan chan *ComparableItem) {
+  memoryItems := make(ComparableItems, 0, numMemory)
+  unmergedFiles := make([]string, 0)
+
+  tmpDir, err := ioutil.TempDir("", "go_external_sort")
+  if err != nil { panic(err) }
+  defer os.RemoveAll(tmpDir)
+
+  fileCount := 0
+  uniqueFileName := func() string {
+    ret := path.Join(tmpDir, strconv.Itoa(fileCount))
+    fileCount++
+    return ret
+  }
+
+  flushMemory := func() {
+    sort.Sort(memoryItems)
+    fileName := uniqueFileName()
+    outputFile, err := os.OpenFile(fileName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+    if err != nil { panic(err) }
+    defer outputFile.Close()
+
+    gobEncoder := gob.NewEncoder(outputFile)
+    for _, item := range memoryItems {
+      err := gobEncoder.Encode(item)
+      if err != nil { panic(err) }
+    }
+    unmergedFiles = append(unmergedFiles, fileName)
+    memoryItems = memoryItems[:0]
   }
 
   for i := range inputChan {
@@ -111,6 +108,8 @@ func ExternalSort(numMemory int, inputChan chan *ComparableItem, outputChan chan
   }
 
   for len(unmergedFiles) > 1 {
+    mergeName := uniqueFileName()
+    mergeFiles(unmergedFiles[0], unmergedFiles[1], mergeName)
     unmergedFiles = append(unmergedFiles[2:], mergeFiles(unmergedFiles[0], unmergedFiles[1]))
   }
 
