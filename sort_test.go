@@ -1,6 +1,7 @@
 package external_sort
 
 import (
+  "math/rand"
   "testing"
   "encoding/gob"
 )
@@ -14,13 +15,15 @@ func (i ComparableInt) LessThan(other *ComparableItem) bool {
 func TestExternalSort(t *testing.T) {
   gob.Register(ComparableInt(0))
 
+  r := rand.New(rand.NewSource(0))
+
   for memorySize := 1; memorySize < 5; memorySize++ {
     unsortedChan := make(chan *ComparableItem)
     sortedChan := make(chan *ComparableItem)
     go ExternalSort(memorySize, unsortedChan, sortedChan)
 
-    for i := 100; i > 0; i-- {
-      in := ComparableItem(ComparableInt(i))
+    for i := 0; i < 1049; i++ {
+      in := ComparableItem(ComparableInt(r.Int()))
       unsortedChan <- &in
     }
     close(unsortedChan)
