@@ -110,7 +110,7 @@ func ExternalSort(numMemory int, inputChan chan *ComparableItem, outputChan chan
   for len(unmergedFiles) > 1 {
     mergeName := uniqueFileName()
     mergeFiles(unmergedFiles[0], unmergedFiles[1], mergeName)
-    unmergedFiles = append(unmergedFiles[2:], mergeFiles(unmergedFiles[0], unmergedFiles[1]))
+    unmergedFiles = append(unmergedFiles[2:], mergeName)
   }
 
   f, err := os.Open(unmergedFiles[0])
