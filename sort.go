@@ -11,15 +11,20 @@ import (
 )
 
 type ComparableItem interface {
-  LessThan(other *ComparableItem) bool
+  LessThan(other ComparableItem) bool
 }
 
-type ComparableItems []*ComparableItem
+type GobHelper interface {
+  EncodeComparable(g *gob.Encoder, item ComparableItem) error
+  DecodeComparable(g *gob.Decoder) (ComparableItem, error)
+}
+
+type ComparableItems []ComparableItem
 func (s ComparableItems) Len() int { return len(s) }
 func (s ComparableItems) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
-func (s ComparableItems) Less(i, j int) bool { return (*s[i]).LessThan(s[j]) }
+func (s ComparableItems) Less(i, j int) bool { return s[i].LessThan(s[j]) }
 
-func mergeFiles(path1, path2, outputPath string) {
+func mergeFiles(gobHelper GobHelper, path1, path2, outputPath string) {
     f1, err := os.Open(path1)
     if err != nil { panic(err) }
     defer f1.Close()
@@ -34,38 +39,37 @@ func mergeFiles(path1, path2, outputPath string) {
     g2 := gob.NewDecoder(f2)
     gout := gob.NewEncoder(fout)
 
-    var tmp ComparableItem
-    var tmp2 ComparableItem
-    h1 := &tmp
-    h2 := &tmp2
+    var h1, h2 ComparableItem
     var err1, err2 error
-    err1 = g1.Decode(h1)
+    h1, err1 = gobHelper.DecodeComparable(g1)
     if err1 != nil { panic(err1) }
-    err2 = g2.Decode(h2)
+    h2, err2 = gobHelper.DecodeComparable(g2)
     if err2 != nil { panic(err2) }
 
     for err1 != io.EOF && err2 != io.EOF {
-      if (*h1).LessThan(h2) {
-        gout.Encode(h1)
-        err1 = g1.Decode(h1)
+      if h1.LessThan(h2) {
+        gobHelper.EncodeComparable(gout, h1)
+        h1, err1 = gobHelper.DecodeComparable(g1)
       } else {
-        gout.Encode(h2)
-        err2 = g2.Decode(h2)
+        gobHelper.EncodeComparable(gout, h2)
+        h2, err2 = gobHelper.DecodeComparable(g2)
       }
     }
 
     for err1 != io.EOF {
-        gout.Encode(h1)
-        err1 = g1.Decode(h1)
+        gobHelper.EncodeComparable(gout, h1)
+        h1, err1 = gobHelper.DecodeComparable(g1)
     }
 
     for err2 != io.EOF {
-        gout.Encode(h2)
-        err2 = g2.Decode(h2)
+        gobHelper.EncodeComparable(gout, h2)
+        h2, err2 = gobHelper.DecodeComparable(g2)
     }
 }
 
-func ExternalSort(numMemory int, inputChan chan *ComparableItem, outputChan chan *ComparableItem) {
+func ExternalSort(numMemory int,
+  gobHelper GobHelper,
+  inputChan chan ComparableItem, outputChan chan ComparableItem) {
   memoryItems := make(ComparableItems, 0, numMemory)
   unmergedFiles := make([]string, 0)
 
@@ -89,7 +93,7 @@ func ExternalSort(numMemory int, inputChan chan *ComparableItem, outputChan chan
 
     gobEncoder := gob.NewEncoder(outputFile)
     for _, item := range memoryItems {
-      err := gobEncoder.Encode(item)
+      err := gobHelper.EncodeComparable(gobEncoder, item)
       if err != nil { panic(err) }
     }
     unmergedFiles = append(unmergedFiles, fileName)
@@ -103,13 +107,14 @@ func ExternalSort(numMemory int, inputChan chan *ComparableItem, outputChan chan
     }
   }
 
+
   if len(memoryItems) > 0 {
     flushMemory()
   }
 
   for len(unmergedFiles) > 1 {
     mergeName := uniqueFileName()
-    mergeFiles(unmergedFiles[0], unmergedFiles[1], mergeName)
+    mergeFiles(gobHelper, unmergedFiles[0], unmergedFiles[1], mergeName)
     unmergedFiles = append(unmergedFiles[2:], mergeName)
   }
 
@@ -118,15 +123,14 @@ func ExternalSort(numMemory int, inputChan chan *ComparableItem, outputChan chan
   g := gob.NewDecoder(f)
 
   for {
-    var h ComparableItem
-    err := g.Decode(&h)
+    h, err := gobHelper.DecodeComparable(g)
     if err == io.EOF {
       close(outputChan)
       break
     } else if err != nil {
       panic(err)
     } else {
-      outputChan <- &h
+      outputChan <- h
     }
   }
 
